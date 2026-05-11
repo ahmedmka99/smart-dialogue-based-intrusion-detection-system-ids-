@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous IDS - Real-time Feed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-container { height: 550px; overflow-y: auto; scroll-behavior: smooth; }
+        .packet-log { 
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            padding: 4px 8px;
+            border-left: 3px solid #10b981;
+            background: #f0fdf4;
+            margin: 2px 0;
+        }
+        .alert-box { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 p-8">
+
+    <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+        <div class="bg-slate-900 p-4 flex justify-between items-center">
+            <h1 class="text-white font-bold">🛡️ Specialised Security Partner</h1>
+            <span class="text-slate-400 text-xs uppercase font-mono">Real-time Behavioural Inference</span>
+        </div>
+
+        <div id="chatBox" class="chat-container p-6 space-y-2 bg-slate-50">
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <p class="text-blue-800 text-sm"><strong>System:</strong> Autonomous monitoring ready. Select a stream and initiate scan. I will report on every packet analysed</p>
+            </div>
+        </div>
+
+        <div class="p-4 bg-white border-t">
+            <div class="flex gap-3">
+                <select id="streamSelect" class="border rounded-lg p-2 text-sm">
+                    <option value="production">🌐 Production (99.97% Data)</option>
+                    <option value="demo">🧪 Viva Demo (0.03% Data)</option>
+                </select>
+                <input type="text" id="chatInput" placeholder="Command (e.g. 'Start scan' or 'Isolate')" class="flex-1 border rounded-lg px-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="sendMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold">Send</button>
+                <button onclick="fastScan()" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold">⏩ Fast Scan</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chatBox');
+        const chatInput = document.getElementById('chatInput');
+        let isScanning = false;
+
+        function addLog(text, isAlert = false, isAI = false) {
+            const div = document.createElement('div');
+            if (isAlert) {
+                div.className = "bg-white border-2 border-red-500 p-4 rounded-lg shadow-lg my-4 alert-box";
+                div.innerHTML = `<p class="text-red-700 font-bold text-lg">${text}</p>`;
+            } else if (isAI) {
+                div.className = "bg-slate-200 p-3 rounded-lg border border-slate-300 my-2";
+                div.innerHTML = `<p class="text-slate-800 text-sm"><strong>AI:</strong> ${text}</p>`;
+            } else {
+                div.className = "packet-log";
+                div.innerHTML = `<span>[ANALYSIS] ${text}</span>`;
+            }
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const msg = chatInput.value;
+            const stream = document.getElementById('streamSelect').value;
+            if (!msg) return;
+            
+            addLog(`User: ${msg}`);
+            chatInput.value = '';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: msg, stream: stream })
+                });
+                
+                const data = await response.json();
+
+                if (data.message === "SCAN_TRIGGERED") {
+                    addLog("⚡ AI Intent Confirmed: Initiating high-speed scan...");
+                    fastScan(); // Automatically trigger the loop [cite: 215, 338]
+                } else if (data.icon === '🛡️') {
+                    addLog(data.message, false, true); // Isolation confirmation [cite: 216]
+                } else {
+                    addLog(data.message, false, true); // General AI response
+                }
+            } catch (e) {
+                addLog("⚠️ Connection error.");
+            }
+        }
+
+        async function fastScan() {
+            if (isScanning) return; 
+            const stream = document.getElementById('streamSelect').value;
+            isScanning = true;
+            
+            while (isScanning) {
+                try {
+                    // Hit the direct ML route for speed and correct packet IDs [cite: 285, 349]
+                    const response = await fetch('/run_scan', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ stream: stream })
+                    });
+                    
+                    const data = await response.json();
+
+                    if (data.message.includes("End of") || data.message.includes("Restarting")) {
+                        addLog(`🛑 SYSTEM: ${data.message}`);
+                        isScanning = false;
+                    } else if (data.icon === '🚨') {
+                        addLog(data.message, true); // High-visibility alert [cite: 274, 317]
+                        isScanning = false; 
+                    } else {
+                        addLog(`Packet #${data.packet}: ${data.message}`);
+                    }
+
+                    await new Promise(r => setTimeout(r, 10)); // 10ms loop [cite: 286]
+                    
+                } catch (e) {
+                    isScanning = false;
+                    addLog("⚠️ Connection error.");
+                }
+            }
+        }
+
+        chatInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
+    </script>
+</body>
+</html>

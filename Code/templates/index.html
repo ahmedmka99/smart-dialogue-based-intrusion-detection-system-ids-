@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Specialised Security Partner - IDS Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-container { height: 480px; overflow-y: auto; scroll-behavior: smooth; }
+        .packet-log {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            padding: 3px 8px;
+            border-left: 3px solid #10b981;
+            background: #f0fdf4;
+            margin: 1px 0;
+        }
+        .alert-log {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            padding: 6px 10px;
+            border-left: 4px solid #ef4444;
+            background: #fef2f2;
+            margin: 3px 0;
+        }
+        .alert-box { animation: alertPulse 1.5s ease-in-out 3; }
+        @keyframes alertPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+        .uncertain-log {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            padding: 6px 10px;
+            border-left: 4px solid #f59e0b;
+            background: #fffbeb;
+            margin: 3px 0;
+        }
+        .uncertain-box { animation: uncertainPulse 1s ease-in-out infinite; }
+        @keyframes uncertainPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        }
+        .review-panel {
+            animation: slideIn 0.3s ease;
+            border: 2px solid #f59e0b;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        }
+        .analyse-btn { transition: all 0.15s ease; }
+        .analyse-btn:hover { transform: scale(1.02); }
+        .confidence-bar { transition: width 0.3s ease; }
+        .stat-card { transition: all 0.2s ease; }
+        .stat-card:hover { transform: translateY(-1px); }
+        .info-panel { animation: slideIn 0.2s ease; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .threat-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+        .report-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 50;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .report-modal {
+            background: white; border-radius: 12px; width: 90%; max-width: 800px;
+            max-height: 85vh; display: flex; flex-direction: column;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+        }
+        .report-content { overflow-y: auto; white-space: pre-wrap; font-family: 'Calibri', sans-serif; line-height: 1.6; }
+        .spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="bg-slate-900 rounded-t-xl p-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-white font-bold text-lg">Specialised Security Partner</h1>
+                <p class="text-slate-400 text-xs">Autonomous IDS Prototype — Random Forest + LLM Interface</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="statusIndicator" class="text-xs font-mono px-3 py-1 rounded-full bg-slate-700 text-slate-300">IDLE</span>
+                <button onclick="generateReport()" id="reportBtn" class="text-xs text-emerald-400 hover:text-white px-2 py-1 border border-emerald-600 rounded">Generate Report</button>
+                <button onclick="resetSession()" class="text-xs text-slate-400 hover:text-white px-2 py-1 border border-slate-600 rounded">Reset</button>
+            </div>
+        </div>
+
+        <div class="flex gap-0 bg-white rounded-b-xl shadow-2xl overflow-hidden">
+            <!-- Left Panel: Scan Feed -->
+            <div class="flex-1 flex flex-col border-r">
+                <!-- Stats Bar -->
+                <div class="grid grid-cols-5 gap-2 p-3 bg-slate-50 border-b text-center">
+                    <div class="stat-card bg-white rounded p-2 shadow-sm">
+                        <div id="statTotal" class="text-xl font-bold text-slate-800">0</div>
+                        <div class="text-xs text-slate-500">Scanned</div>
+                    </div>
+                    <div class="stat-card bg-white rounded p-2 shadow-sm">
+                        <div id="statThreats" class="text-xl font-bold text-red-600">0</div>
+                        <div class="text-xs text-slate-500">Threats</div>
+                    </div>
+                    <div class="stat-card bg-white rounded p-2 shadow-sm">
+                        <div id="statUncertain" class="text-xl font-bold text-amber-500">0</div>
+                        <div class="text-xs text-slate-500">Uncertain</div>
+                    </div>
+                    <div class="stat-card bg-white rounded p-2 shadow-sm">
+                        <div id="statBenign" class="text-xl font-bold text-green-600">0</div>
+                        <div class="text-xs text-slate-500">Benign</div>
+                    </div>
+                    <div class="stat-card bg-white rounded p-2 shadow-sm">
+                        <div id="statConfidence" class="text-xl font-bold text-blue-600">—</div>
+                        <div class="text-xs text-slate-500">Avg Conf.</div>
+                    </div>
+                </div>
+
+                <!-- Chat/Scan Feed -->
+                <div id="chatBox" class="chat-container p-3 space-y-1 bg-white">
+                    <div class="bg-blue-50 p-3 rounded border border-blue-200 text-sm">
+                        <p class="text-blue-800"><strong>System:</strong> Ready. Select a data stream and type a command or click Fast Scan. You can also ask about any attack type for a plain-English explanation.</p>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="p-3 bg-white border-t">
+                    <div class="flex gap-2">
+                        <select id="streamSelect" class="border rounded p-2 text-sm bg-white">
+                            <option value="production">Production (99.97%)</option>
+                            <option value="demo">Demo (0.03%)</option>
+                            <option value="uncertain">Uncertain Demo (3-Tier)</option>
+                        </select>
+                        <input type="text" id="chatInput"
+                            placeholder="e.g. 'Scan network', 'Isolate', 'What is a Hulk attack?'"
+                            class="flex-1 border rounded px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="sendMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm font-semibold">Send</button>
+                        <button onclick="toggleFastScan()" id="fastScanBtn" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded text-sm font-semibold">Fast Scan</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Dashboard -->
+            <div class="w-80 flex flex-col bg-slate-50">
+                <!-- Threat Breakdown -->
+                <div class="p-3 border-b">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Threat Breakdown</h3>
+                    <div id="threatBreakdown" class="space-y-1">
+                        <p class="text-xs text-slate-400 italic">No threats detected yet.</p>
+                    </div>
+                </div>
+
+                <!-- Last Detection -->
+                <div class="p-3 border-b">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Last Detection</h3>
+                    <div id="lastDetection" class="bg-white rounded p-3 shadow-sm">
+                        <p class="text-xs text-slate-400 italic">Waiting for scan...</p>
+                    </div>
+                </div>
+
+                <!-- Confidence Breakdown (Top-3) -->
+                <div class="p-3 border-b">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Classification Confidence</h3>
+                    <div id="confidencePanel" class="space-y-2">
+                        <p class="text-xs text-slate-400 italic">No data yet.</p>
+                    </div>
+                </div>
+
+                <!-- Attack Info Panel -->
+                <div class="p-3 flex-1 overflow-y-auto">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Attack Intelligence</h3>
+                    <div id="attackInfoPanel">
+                        <p class="text-xs text-slate-400 italic">Click a threat name or ask about an attack to see details.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div id="reportOverlay" class="report-overlay hidden">
+        <div class="report-modal">
+            <div class="flex justify-between items-center p-4 border-b bg-slate-900 rounded-t-xl">
+                <div>
+                    <h2 class="text-white font-bold">Security Incident Report</h2>
+                    <p class="text-slate-400 text-xs">Generated by Mistral 7B (Local LLM) — No data sent externally</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="downloadReport()" id="downloadBtn" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded font-semibold disabled:opacity-50" disabled>Download .docx</button>
+                    <button onclick="closeReport()" class="text-xs text-slate-400 hover:text-white px-2 py-1 border border-slate-600 rounded">Close</button>
+                </div>
+            </div>
+            <div id="reportBody" class="report-content p-6 text-sm text-slate-700">
+                <div class="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <svg class="spinner w-8 h-8 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="30 60"/></svg>
+                    <p class="font-medium">Generating incident report...</p>
+                    <p class="text-xs mt-1">Mistral is analysing your scan session. This may take up to 2 minutes.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chatBox');
+        const chatInput = document.getElementById('chatInput');
+        let isScanning = false;
+        let totalScanned = 0;
+        let totalThreats = 0;
+        let totalUncertain = 0;
+        let totalBenign = 0;
+        let confidences = [];
+
+        // --- UI UPDATE FUNCTIONS ---
+        function updateStats() {
+            document.getElementById('statTotal').textContent = totalScanned;
+            document.getElementById('statThreats').textContent = totalThreats;
+            document.getElementById('statUncertain').textContent = totalUncertain;
+            document.getElementById('statBenign').textContent = totalBenign;
+            if (confidences.length > 0) {
+                const avg = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+                document.getElementById('statConfidence').textContent = avg.toFixed(1) + '%';
+            }
+        }
+
+        function updateThreatBreakdown(stats) {
+            const container = document.getElementById('threatBreakdown');
+            if (!stats || !stats.threat_breakdown || Object.keys(stats.threat_breakdown).length === 0) return;
+
+            let html = '';
+            const sorted = Object.entries(stats.threat_breakdown).sort((a, b) => b[1] - a[1]);
+            for (const [label, count] of sorted) {
+                const pct = ((count / stats.total_scanned) * 100).toFixed(1);
+                html += `
+                    <div class="flex items-center justify-between bg-white rounded px-2 py-1 shadow-sm cursor-pointer hover:bg-red-50"
+                         onclick="fetchAttackInfo('${label}')">
+                        <span class="text-xs font-medium text-red-700">${label}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500">${count}</span>
+                            <span class="threat-badge bg-red-100 text-red-700">${pct}%</span>
+                        </div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function updateLastDetection(data) {
+            const container = document.getElementById('lastDetection');
+            if (data.is_threat) {
+                container.innerHTML = `
+                    <div class="info-panel">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="font-bold text-red-700 text-sm">${data.label}</span>
+                            <span class="threat-badge ${getConfidenceColor(data.confidence)}">${data.confidence}%</span>
+                        </div>
+                        <div class="text-xs text-slate-600 space-y-1">
+                            <div>Packet: #${data.packet}</div>
+                            ${data.category ? `<div>Category: ${data.category}</div>` : ''}
+                            ${data.network_info ? `
+                                <div>Dest Port: ${data.network_info.dest_port}</div>
+                                <div>Fwd Pkts: ${data.network_info.fwd_packets} | Bwd Pkts: ${data.network_info.bwd_packets}</div>
+                            ` : ''}
+                        </div>
+                        <button onclick="fetchAttackInfo('${data.label}')"
+                            class="mt-2 w-full text-xs bg-red-50 hover:bg-red-100 text-red-700 py-1 rounded border border-red-200">
+                            What is ${data.label}?
+                        </button>
+                    </div>`;
+            } else if (data.is_uncertain) {
+                container.innerHTML = `
+                    <div class="info-panel border-l-4 border-amber-400 pl-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="font-bold text-amber-700 text-sm">${data.label}</span>
+                            <span class="threat-badge bg-amber-100 text-amber-700">${data.confidence}%</span>
+                        </div>
+                        <div class="text-xs text-amber-600 font-semibold mb-1">UNCERTAIN — Review Required</div>
+                        <div class="text-xs text-slate-600 space-y-1">
+                            <div>Packet: #${data.packet}</div>
+                            ${data.category ? `<div>Category: ${data.category}</div>` : ''}
+                            ${data.network_info ? `
+                                <div>Dest Port: ${data.network_info.dest_port}</div>
+                                <div>Fwd Pkts: ${data.network_info.fwd_packets} | Bwd Pkts: ${data.network_info.bwd_packets}</div>
+                            ` : ''}
+                        </div>
+                        <button onclick="fetchAttackInfo('${data.label}')"
+                            class="mt-2 w-full text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 py-1 rounded border border-amber-200">
+                            What is ${data.label}?
+                        </button>
+                    </div>`;
+            } else {
+                container.innerHTML = `
+                    <div class="info-panel">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-green-700 text-sm">Benign</span>
+                            <span class="threat-badge bg-green-100 text-green-700">${data.confidence}%</span>
+                        </div>
+                        <div class="text-xs text-slate-500 mt-1">Packet #${data.packet}${data.network_info ? ` | Port ${data.network_info.dest_port}` : ''}</div>
+                    </div>`;
+            }
+        }
+
+        function updateConfidencePanel(top3) {
+            const container = document.getElementById('confidencePanel');
+            if (!top3 || top3.length === 0) return;
+
+            let html = '';
+            for (const item of top3) {
+                const color = item.label === 'BENIGN' ? 'bg-green-500' : 'bg-red-500';
+                const bgColor = item.label === 'BENIGN' ? 'bg-green-50' : 'bg-red-50';
+                html += `
+                    <div class="${bgColor} rounded p-1 px-2">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="font-medium">${item.label}</span>
+                            <span class="font-bold">${item.confidence}%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5">
+                            <div class="confidence-bar ${color} h-1.5 rounded-full" style="width: ${item.confidence}%"></div>
+                        </div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function getConfidenceColor(conf) {
+            if (conf >= 95) return 'bg-red-200 text-red-800';
+            if (conf >= 89) return 'bg-orange-200 text-orange-800';
+            if (conf >= 70) return 'bg-yellow-200 text-yellow-800';
+            return 'bg-slate-200 text-slate-600';
+        }
+
+        function showAttackInfo(info) {
+            const container = document.getElementById('attackInfoPanel');
+            container.innerHTML = `
+                <div class="info-panel bg-white rounded p-3 shadow-sm space-y-2">
+                    <div class="font-bold text-sm text-slate-800">${info.name}</div>
+                    <div class="threat-badge bg-slate-100 text-slate-600">${info.category}</div>
+                    <div>
+                        <div class="text-xs font-semibold text-slate-600 mt-2">What it does:</div>
+                        <p class="text-xs text-slate-700">${info.description}</p>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-red-600">Impact:</div>
+                        <p class="text-xs text-slate-700">${info.impact}</p>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-green-600">Recommended response:</div>
+                        <p class="text-xs text-slate-700">${info.response}</p>
+                    </div>
+                </div>`;
+        }
+
+        async function fetchAttackInfo(attackType) {
+            try {
+                const r = await fetch(`/get_attack_info/${encodeURIComponent(attackType)}`);
+                const info = await r.json();
+                if (!info.error) showAttackInfo(info);
+            } catch (e) { /* ignore */ }
+        }
+
+        // --- LOG FUNCTIONS ---
+        function addLog(text, type = 'safe') {
+            const div = document.createElement('div');
+            if (type === 'alert') {
+                div.className = 'alert-log alert-box';
+                div.innerHTML = `<span class="text-red-700 font-semibold">${text}</span>`;
+            } else if (type === 'uncertain') {
+                div.className = 'uncertain-log uncertain-box';
+                div.innerHTML = `<span class="text-amber-700 font-semibold">${text}</span>`;
+            } else if (type === 'ai') {
+                div.className = 'bg-slate-100 p-2 rounded border border-slate-200 my-1 text-sm';
+                div.innerHTML = `<span class="text-slate-700"><strong>AI:</strong> ${text}</span>`;
+            } else if (type === 'system') {
+                div.className = 'bg-blue-50 p-2 rounded border border-blue-200 my-1 text-sm';
+                div.innerHTML = `<span class="text-blue-700">${text}</span>`;
+            } else if (type === 'isolation') {
+                div.className = 'bg-amber-50 p-3 rounded border-2 border-amber-400 my-2 text-sm';
+                div.innerHTML = `<span class="text-amber-800 font-medium">${text}</span>`;
+            } else {
+                div.className = 'packet-log';
+                div.innerHTML = `<span>${text}</span>`;
+            }
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // --- UNCERTAIN PACKET REVIEW ---
+        function showReviewPanel(data) {
+            const div = document.createElement('div');
+            div.className = 'review-panel rounded-lg p-4 my-2';
+            div.id = 'reviewPanel';
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-lg">&#9888;</span>
+                    <span class="font-bold text-amber-800">Uncertain Detection — Operator Review Required</span>
+                </div>
+                <div class="bg-white rounded p-3 mb-3 text-sm space-y-1">
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Classification:</span>
+                        <span class="font-bold text-amber-700">${data.label}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Confidence:</span>
+                        <span class="font-bold ${data.confidence >= 75 ? 'text-orange-600' : 'text-amber-500'}">${data.confidence}%</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Category:</span>
+                        <span>${data.category || 'Unknown'}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Dest Port:</span>
+                        <span>${data.network_info?.dest_port || '?'}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">Packets (Fwd/Bwd):</span>
+                        <span>${data.network_info?.fwd_packets || '?'} / ${data.network_info?.bwd_packets || '?'}</span>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="analyseUncertain()" id="analyseBtn"
+                        class="analyse-btn flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded text-sm font-semibold">
+                        Analyse with AI
+                    </button>
+                    <button onclick="resolvePacket('threat')"
+                        class="analyse-btn flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-3 rounded text-sm font-semibold">
+                        Mark as Threat
+                    </button>
+                    <button onclick="resolvePacket('dismiss')"
+                        class="analyse-btn flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded text-sm font-semibold">
+                        Dismiss
+                    </button>
+                </div>
+                <div id="analysisResult" class="hidden mt-3"></div>
+            `;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function analyseUncertain() {
+            const btn = document.getElementById('analyseBtn');
+            const resultDiv = document.getElementById('analysisResult');
+            btn.textContent = 'Analysing...';
+            btn.disabled = true;
+            btn.className = 'analyse-btn flex-1 bg-blue-400 text-white py-2 px-3 rounded text-sm font-semibold cursor-wait';
+
+            try {
+                const response = await fetch('/analyse_packet', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+
+                resultDiv.className = 'mt-3 bg-white rounded p-3 border border-blue-200';
+                resultDiv.innerHTML = `
+                    <div class="text-xs font-bold text-blue-700 uppercase mb-1">AI Analysis</div>
+                    <p class="text-sm text-slate-700">${data.analysis}</p>
+                `;
+                btn.textContent = 'Analysis Complete';
+            } catch (e) {
+                resultDiv.className = 'mt-3 bg-red-50 rounded p-3 border border-red-200';
+                resultDiv.innerHTML = '<p class="text-sm text-red-600">Failed to get AI analysis. Make a decision based on the data above.</p>';
+                btn.textContent = 'Analyse with AI';
+                btn.disabled = false;
+                btn.className = 'analyse-btn flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded text-sm font-semibold';
+            }
+        }
+
+        async function resolvePacket(decision) {
+            try {
+                const response = await fetch('/resolve_packet', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ decision: decision })
+                });
+                const data = await response.json();
+
+                // Remove the review panel
+                const panel = document.getElementById('reviewPanel');
+                if (panel) panel.remove();
+
+                if (decision === 'threat') {
+                    totalThreats++;
+                    totalUncertain--;
+                    addLog(`Operator confirmed: ${data.message}`, 'alert');
+                } else {
+                    totalBenign++;
+                    totalUncertain--;
+                    addLog(`Operator dismissed: ${data.message}`, 'system');
+                }
+                updateStats();
+
+                // Fetch updated stats
+                const statsR = await fetch('/get_stats');
+                const stats = await statsR.json();
+                updateThreatBreakdown(stats);
+
+                addLog('Review complete. Click Fast Scan to continue.', 'system');
+            } catch (e) {
+                addLog('Error resolving packet.', 'system');
+            }
+        }
+
+        // --- CORE ACTIONS ---
+        async function sendMessage() {
+            const msg = chatInput.value.trim();
+            const stream = document.getElementById('streamSelect').value;
+            if (!msg) return;
+
+            addLog(`> ${msg}`, 'system');
+            chatInput.value = '';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: msg, stream: stream })
+                });
+                const data = await response.json();
+
+                if (data.message === 'SCAN_TRIGGERED') {
+                    addLog('Scan initiated. Processing packets...', 'system');
+                    startFastScan();
+                } else if (data.icon === 'shield') {
+                    addLog(data.message, 'isolation');
+                } else if (data.message === 'EXPLAIN_RESULT' && data.attack_info) {
+                    showAttackInfo(data.attack_info);
+                    addLog(`Loaded explanation for: ${data.attack_info.name}`, 'system');
+                } else if (data.message === 'STATS_RESULT' && data.stats) {
+                    updateThreatBreakdown(data.stats);
+                    addLog(`Session stats: ${data.stats.total_scanned} scanned, ${data.stats.threats_detected} threats detected.`, 'system');
+                } else {
+                    addLog(data.message, 'ai');
+                }
+            } catch (e) {
+                addLog('Connection error. Is the server running?', 'system');
+            }
+        }
+
+        function toggleFastScan() {
+            if (isScanning) {
+                isScanning = false;
+                document.getElementById('fastScanBtn').textContent = 'Fast Scan';
+                document.getElementById('fastScanBtn').className = 'bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded text-sm font-semibold';
+                document.getElementById('statusIndicator').textContent = 'PAUSED';
+                document.getElementById('statusIndicator').className = 'text-xs font-mono px-3 py-1 rounded-full bg-yellow-600 text-white';
+            } else {
+                startFastScan();
+            }
+        }
+
+        async function startFastScan() {
+            if (isScanning) return;
+            const stream = document.getElementById('streamSelect').value;
+            isScanning = true;
+
+            document.getElementById('fastScanBtn').textContent = 'Stop';
+            document.getElementById('fastScanBtn').className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm font-semibold';
+            document.getElementById('statusIndicator').textContent = 'SCANNING';
+            document.getElementById('statusIndicator').className = 'text-xs font-mono px-3 py-1 rounded-full bg-green-600 text-white';
+
+            while (isScanning) {
+                try {
+                    const response = await fetch('/run_scan', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ stream: stream })
+                    });
+                    const data = await response.json();
+
+                    if (data.icon === 'reset') {
+                        addLog('End of data stream. Scan complete.', 'system');
+                        if (data.stats) updateThreatBreakdown(data.stats);
+                        isScanning = false;
+                        break;
+                    }
+
+                    totalScanned++;
+
+                    if (data.is_threat) {
+                        // TIER 1: High confidence threat (>=89%)
+                        totalThreats++;
+                        confidences.push(data.confidence);
+                        addLog(`#${data.packet} | ${data.label} | Confidence: ${data.confidence}% | Port: ${data.network_info?.dest_port || '?'}`, 'alert');
+                        updateLastDetection(data);
+                        if (data.top3) updateConfidencePanel(data.top3);
+
+                        isScanning = false;
+                        addLog('Scan paused on threat detection. Review above, then click Fast Scan to continue or type "Isolate" to quarantine.', 'system');
+
+                        const statsR = await fetch('/get_stats');
+                        const stats = await statsR.json();
+                        updateThreatBreakdown(stats);
+
+                    } else if (data.is_uncertain) {
+                        // TIER 2: Uncertain zone (50-89%) — operator must review
+                        totalUncertain++;
+                        confidences.push(data.confidence);
+                        addLog(`#${data.packet} | ${data.label} | Confidence: ${data.confidence}% | UNCERTAIN — review required`, 'uncertain');
+                        updateLastDetection(data);
+                        if (data.top3) updateConfidencePanel(data.top3);
+
+                        // Pause scan and show the review panel
+                        isScanning = false;
+                        showReviewPanel(data);
+
+                        document.getElementById('statusIndicator').textContent = 'REVIEW';
+                        document.getElementById('statusIndicator').className = 'text-xs font-mono px-3 py-1 rounded-full bg-amber-500 text-white';
+
+                    } else {
+                        // TIER 3: Benign (<50% threat confidence)
+                        totalBenign++;
+                        addLog(`#${data.packet} | Benign | ${data.confidence}% | Port: ${data.network_info?.dest_port || '?'}`);
+                        updateLastDetection(data);
+                        if (data.top3) updateConfidencePanel(data.top3);
+                    }
+
+                    updateStats();
+                    await new Promise(r => setTimeout(r, 15));
+
+                } catch (e) {
+                    isScanning = false;
+                    addLog('Connection error during scan.', 'system');
+                }
+            }
+
+            document.getElementById('fastScanBtn').textContent = 'Fast Scan';
+            document.getElementById('fastScanBtn').className = 'bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded text-sm font-semibold';
+            if (!isScanning) {
+                document.getElementById('statusIndicator').textContent = 'IDLE';
+                document.getElementById('statusIndicator').className = 'text-xs font-mono px-3 py-1 rounded-full bg-slate-700 text-slate-300';
+            }
+        }
+
+        async function resetSession() {
+            isScanning = false;
+            totalScanned = 0;
+            totalThreats = 0;
+            totalUncertain = 0;
+            totalBenign = 0;
+            confidences = [];
+            updateStats();
+
+            try {
+                await fetch('/reset', { method: 'POST' });
+            } catch (e) { /* ignore */ }
+
+            chatBox.innerHTML = `
+                <div class="bg-blue-50 p-3 rounded border border-blue-200 text-sm">
+                    <p class="text-blue-800"><strong>System:</strong> Session reset. Ready for new scan.</p>
+                </div>`;
+
+            document.getElementById('threatBreakdown').innerHTML = '<p class="text-xs text-slate-400 italic">No threats detected yet.</p>';
+            document.getElementById('lastDetection').innerHTML = '<p class="text-xs text-slate-400 italic">Waiting for scan...</p>';
+            document.getElementById('confidencePanel').innerHTML = '<p class="text-xs text-slate-400 italic">No data yet.</p>';
+            document.getElementById('attackInfoPanel').innerHTML = '<p class="text-xs text-slate-400 italic">Click a threat name or ask about an attack to see details.</p>';
+            document.getElementById('statusIndicator').textContent = 'IDLE';
+            document.getElementById('statusIndicator').className = 'text-xs font-mono px-3 py-1 rounded-full bg-slate-700 text-slate-300';
+        }
+
+        // --- INCIDENT REPORT GENERATION ---
+        let currentReport = '';
+
+        async function generateReport() {
+            if (totalScanned === 0) {
+                addLog('No scan data yet. Run a scan before generating a report.', 'system');
+                return;
+            }
+
+            // Show modal with loading spinner
+            document.getElementById('reportOverlay').classList.remove('hidden');
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('reportBody').innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <svg class="spinner w-8 h-8 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="30 60"/></svg>
+                    <p class="font-medium">Generating incident report...</p>
+                    <p class="text-xs mt-1">Mistral is analysing your scan session. This may take up to 2 minutes.</p>
+                </div>`;
+
+            try {
+                const response = await fetch('/generate_report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                currentReport = data.report;
+
+                // Format and display the report
+                const formatted = formatReport(data.report);
+                document.getElementById('reportBody').innerHTML = formatted;
+                document.getElementById('downloadBtn').disabled = false;
+                addLog('Incident report generated successfully.', 'system');
+            } catch (e) {
+                document.getElementById('reportBody').innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <p class="font-medium">Failed to generate report.</p>
+                        <p class="text-xs mt-1">Check that the Flask server and Ollama are running.</p>
+                    </div>`;
+            }
+        }
+
+        function formatReport(text) {
+            // Convert the LLM's text output into styled HTML
+            let html = '<div class="space-y-3">';
+            const lines = text.split('\n');
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                // Section headings (numbered or markdown)
+                if (/^\d+\.\s+[A-Z]/.test(trimmed) || /^#+\s/.test(trimmed)) {
+                    const heading = trimmed.replace(/^[\d.#]+\s*/, '').replace(/\*\*/g, '').replace(/:$/, '');
+                    html += `<h3 class="font-bold text-slate-900 text-base mt-4 mb-1 border-b pb-1">${heading}</h3>`;
+                } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                    html += `<div class="flex gap-2 ml-4"><span class="text-slate-400">&#8226;</span><span>${trimmed.slice(2).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</span></div>`;
+                } else {
+                    html += `<p>${trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`;
+                }
+            }
+            html += '</div>';
+            return html;
+        }
+
+        async function downloadReport() {
+            if (!currentReport) return;
+
+            document.getElementById('downloadBtn').textContent = 'Preparing...';
+            document.getElementById('downloadBtn').disabled = true;
+
+            try {
+                const response = await fetch('/export_report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ report: currentReport })
+                });
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `incident_report_${new Date().toISOString().slice(0,10)}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                document.getElementById('downloadBtn').textContent = 'Downloaded!';
+                setTimeout(() => {
+                    document.getElementById('downloadBtn').textContent = 'Download .docx';
+                    document.getElementById('downloadBtn').disabled = false;
+                }, 2000);
+            } catch (e) {
+                document.getElementById('downloadBtn').textContent = 'Download .docx';
+                document.getElementById('downloadBtn').disabled = false;
+                addLog('Failed to download report.', 'system');
+            }
+        }
+
+        function closeReport() {
+            document.getElementById('reportOverlay').classList.add('hidden');
+        }
+
+        chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+    </script>
+</body>
+</html>
