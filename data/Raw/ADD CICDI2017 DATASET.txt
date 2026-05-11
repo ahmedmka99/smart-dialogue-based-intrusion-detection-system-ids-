@@ -1,0 +1,5 @@
+LINK 1: https://www.kaggle.com/datasets/sayakghosh001/cicd-2017-dataset
+ALTERNATIVE lINK:
+https://www.unb.ca/cic/datasets/ids-2017.html
+https://data.mendeley.com/datasets/85sjtpsyrm/1
+https://ieee-dataport.org/documents/cicids2017
