@@ -1,0 +1,14 @@
+# Core Data Science & ML
+numpy
+pandas
+scikit-learn
+joblib
+
+# Web Framework
+flask
+
+# AI / LLM Integration
+ollama
+
+# Report Generation
+python-docx
